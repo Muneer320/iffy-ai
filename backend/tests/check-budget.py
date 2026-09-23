@@ -20,7 +20,9 @@ try:
     start=run('docker','run','-d','--name',container,'-e','POSTGRES_PASSWORD=synthetic-ephemeral-test','postgres:16-alpine')
     if start.returncode: raise RuntimeError(start.stderr)
     for attempt in range(45):
-        if run('docker','exec',container,'pg_isready','-U','postgres').returncode==0: break
+        # The image's temporary init server accepts Unix sockets, then stops.
+        # Only the final server exposes TCP, so don't race that handover.
+        if run('docker','exec',container,'pg_isready','-h','127.0.0.1','-U','postgres').returncode==0: break
         time.sleep(1)
     else: raise RuntimeError('Test database did not become ready')
     sql('CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role BYPASSRLS;')
@@ -28,6 +30,8 @@ try:
         sql((root/'lib/supabase/migrations'/name).read_text(encoding='utf-8'))
     # Idempotent upgrade: reapplying 002 must preserve data and permissions.
     sql((root/'lib/supabase/migrations/002_private_workspace.sql').read_text(encoding='utf-8'))
+    second=float(sql('SELECT EXTRACT(SECOND FROM now());').stdout.strip())
+    if second>50: time.sleep(60-second+0.2)
     with ThreadPoolExecutor(max_workers=16) as pool:
         replies=list(pool.map(lambda _:sql('SET ROLE service_role; SELECT public.iffy_consume_generation_budget();').stdout.strip(),range(16)))
     assert replies.count('t')==6 and replies.count('f')==10,replies
