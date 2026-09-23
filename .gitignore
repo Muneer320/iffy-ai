@@ -1,1 +1,12 @@
 Docs/*
+**/.local-data/
+**/test-results/
+**/playwright-report/
+**/.env*
+!**/.env*.example
+
+# Publish only these maintained docs; keep historical Docs exclusions intact.
+!docs/OPERATIONS.md
+!docs/PROVENANCE.md
+!docs/images/
+!docs/images/*.png

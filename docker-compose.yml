@@ -1,0 +1,32 @@
+services:
+  api:
+    build: ./backend
+    environment:
+      IFFY_MODE: demo
+      IFFY_DATA_DIR: /app/.local-data
+      CORS_ORIGIN: http://localhost:5175
+    ports:
+      - "127.0.0.1:8102:3000"
+    volumes:
+      - notebooks:/app/.local-data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 4s
+      retries: 20
+      start_period: 15s
+  web:
+    build: ./frontend
+    ports:
+      - "127.0.0.1:5175:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 4s
+      retries: 20
+      start_period: 15s
+volumes:
+  notebooks:

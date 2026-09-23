@@ -1,6 +1,7 @@
 import { getGroqClient, GROQ_MODEL, AI_MAX_RETRIES } from "../groq";
 import { logger } from "../../utils/logger";
 import { AppError } from "../../utils/errors";
+import { consumeGenerationBudget } from '../../api';
 
 interface GenerateOptions {
   systemPrompt: string;
@@ -31,6 +32,7 @@ export async function generateFromAI(options: GenerateOptions): Promise<unknown>
   let lastError: unknown;
 
   for (let attempt = 1; attempt <= AI_MAX_RETRIES + 1; attempt++) {
+    await consumeGenerationBudget();
     const start = Date.now();
     try {
       const completion = await client.chat.completions.create({
@@ -61,11 +63,13 @@ export async function generateFromAI(options: GenerateOptions): Promise<unknown>
       try {
         return JSON.parse(raw);
       } catch {
-        throw new Error(`LLM returned non-JSON content: ${raw.slice(0, 200)}`);
+        throw new Error('The model returned invalid JSON.');
       }
     } catch (err) {
       const latency = Date.now() - start;
       lastError = err;
+      if(err instanceof AppError) throw err;
+      if((err as {status?:number}).status === 429) throw new AppError('rate_limit_error', 'The model provider is rate limited. Try again later.', 429);
 
       logger.aiCall({
         endpoint,
@@ -77,7 +81,7 @@ export async function generateFromAI(options: GenerateOptions): Promise<unknown>
 
       if (attempt <= AI_MAX_RETRIES) {
         logger.warn(`[AI] Retrying ${endpoint} (attempt ${attempt + 1}/${AI_MAX_RETRIES + 1})`, {
-          error: String(err),
+          endpoint,
         });
         // Small back-off between retries
         await new Promise((r) => setTimeout(r, 500 * attempt));
@@ -91,6 +95,6 @@ export async function generateFromAI(options: GenerateOptions): Promise<unknown>
     "ai_generation_error",
     `AI generation failed after ${AI_MAX_RETRIES + 1} attempts for ${endpoint}`,
     502,
-    String(lastError)
+    undefined
   );
 }

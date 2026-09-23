@@ -1,0 +1,75 @@
+name: Verify consequence notebook
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - run: npm run typecheck
+      - run: npm audit --omit=dev
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+      - run: npm run typecheck
+      - run: npm audit --omit=dev
+  budget-migration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 backend/tests/check-budget.py
+  demo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: docker compose -p iffy-demo up -d --build --wait
+      - run: python3 backend/tests/smoke-demo.py
+      - run: npm ci
+        working-directory: frontend
+      - run: npx playwright install --with-deps chromium
+        working-directory: frontend
+      - run: npx playwright test
+        working-directory: frontend
+      - name: Check notebooks survive recreation
+        run: |
+          before=$(curl --fail --silent http://localhost:8102/api/saved | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"][0]["simulation_id"])')
+          docker compose -p iffy-demo up -d --force-recreate --wait api
+          curl --fail --silent "http://localhost:8102/api/simulation/$before" | python3 -c 'import json,sys; assert json.load(sys.stdin)["success"]'
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-evidence
+          path: frontend/test-results
+      - if: always()
+        run: docker compose -p iffy-demo logs --tail=80
+      - if: always()
+        run: docker compose -p iffy-demo down

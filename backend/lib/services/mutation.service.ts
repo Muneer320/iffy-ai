@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { v4 as uuidv4 } from "uuid";
+import { randomUUID as uuidv4 } from "node:crypto";
 import { generateFromAI } from "../ai/pipeline/generate";
 import { validateOutput } from "../ai/pipeline/validate";
 import { repairOutput } from "../ai/pipeline/repair";
@@ -8,12 +8,15 @@ import { NodeSchema, Node } from "../schemas/node.schema";
 import { EdgeSchema } from "../schemas/edge.schema";
 import { TimelineSchema } from "../schemas/timeline.schema";
 import { SectorImpactSchema } from "../schemas/sector.schema";
-import { getSupabaseAdmin } from "../supabase/client";
+import { saveSimulation } from '../storage';
+import { runtimeMode } from '../runtime';
+import { branchDemo } from '../demo/examples';
+import { SimulationResponse, SimulationResponseSchema } from '../schemas/simulation.schema';
 import { getSimulationById } from "./simulation.service";
 import { logger } from "../utils/logger";
 import { AppError } from "../utils/errors";
 
-/* ─── Delta Schema ───────────────────────────────────────────────────────────
+/* â”€â”€â”€ Delta Schema â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
  * The model only outputs NEW and CHANGED nodes.
  * The server merges them with original nodes from the DB.
  */
@@ -47,7 +50,7 @@ const DeltaMutationSchema = z.object({
 
 type DeltaMutation = z.infer<typeof DeltaMutationSchema>;
 
-/* ─── Final Mutation Response ────────────────────────────────────────────────*/
+/* â”€â”€â”€ Final Mutation Response â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€*/
 export interface MutationResponse {
   mutation_id: string;
   divergence_nodes: string[];
@@ -56,6 +59,7 @@ export interface MutationResponse {
   updated_timeline: z.infer<typeof TimelineSchema>;
   updated_sector_impacts: z.infer<typeof SectorImpactSchema>[];
   mutation_summary: string;
+  simulation: SimulationResponse;
 }
 
 export interface MutateRequest {
@@ -65,7 +69,7 @@ export interface MutateRequest {
 }
 
 /**
- * Mutation Service — Delta Approach
+ * Mutation Service â€” Delta Approach
  *
  * 1. Loads full original simulation from Supabase (for complete node data)
  * 2. Sends compressed node list to model (just IDs + labels for reference)
@@ -74,12 +78,19 @@ export interface MutateRequest {
  */
 export async function runMutation(req: MutateRequest): Promise<MutationResponse> {
   const { simulation_id, existing_state, mutation_prompt } = req;
+  if(runtimeMode() === 'demo') {
+    const original=await getSimulationById(simulation_id);
+    if(!original) throw new AppError('not_found','The original notebook was not found.',404);
+    const branch=branchDemo(original,mutation_prompt);
+    await saveSimulation(branch);
+    return {mutation_id:branch.simulation_id,divergence_nodes:['n3','n4'],updated_nodes:branch.nodes,updated_edges:branch.edges,updated_timeline:branch.timeline,updated_sector_impacts:branch.sector_impacts,mutation_summary:branch.summary,simulation:branch};
+  }
 
   if (!mutation_prompt || mutation_prompt.trim().length < 3) {
     throw new AppError("bad_request", "mutation_prompt is required.", 400);
   }
 
-  // ─── Load full simulation ────────────────────────────────────────────────
+  // â”€â”€â”€ Load full simulation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   let fullSimulation: Record<string, unknown> | null = null;
 
   // Try DB first, fall back to existing_state from request
@@ -106,7 +117,9 @@ export async function runMutation(req: MutateRequest): Promise<MutationResponse>
     ? (fullSimulation.nodes as Node[])
     : [];
 
-  // ─── Generate ────────────────────────────────────────────────────────────
+  if((fullSimulation as unknown as SimulationResponse).simulation_id !== simulation_id) throw new AppError('bad_request','existing_state must match simulation_id.',400);
+
+  // â”€â”€â”€ Generate â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const systemPrompt = MUTATE_SYSTEM_PROMPT;
   const userPrompt = buildMutateUserPrompt(mutation_prompt, fullSimulation);
 
@@ -117,7 +130,7 @@ export async function runMutation(req: MutateRequest): Promise<MutationResponse>
     temperature: 0.6,
   });
 
-  // ─── Validate → Repair ───────────────────────────────────────────────────
+  // â”€â”€â”€ Validate â†’ Repair â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   let delta: DeltaMutation;
   try {
     delta = validateOutput(DeltaMutationSchema, rawData, "mutate", 1);
@@ -136,7 +149,7 @@ export async function runMutation(req: MutateRequest): Promise<MutationResponse>
     }
   }
 
-  // ─── Server-side merge ───────────────────────────────────────────────────
+  // â”€â”€â”€ Server-side merge â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Build a map of original nodes by ID for fast lookup
   const originalNodeMap = new Map<string, Node>(originalNodes.map((n) => [n.id, n]));
 
@@ -163,6 +176,12 @@ export async function runMutation(req: MutateRequest): Promise<MutationResponse>
   const mergedNodes = Array.from(originalNodeMap.values());
 
   const mutation_id = uuidv4();
+  const original=SimulationResponseSchema.parse(fullSimulation);
+  const branch=validateOutput(SimulationResponseSchema,{
+    ...original,simulation_id:mutation_id,title:`${original.title} Â· branch`,summary:delta.mutation_summary,
+    nodes:mergedNodes,edges:delta.updated_edges,timeline:delta.updated_timeline,sector_impacts:delta.updated_sector_impacts,
+    metadata:{...original.metadata,mode:'live',parent_id:simulation_id,mutation_prompt,generated_at:new Date().toISOString()}
+  },'mutate:merged',1);
   const result: MutationResponse = {
     mutation_id,
     divergence_nodes: delta.divergence_nodes,
@@ -171,23 +190,10 @@ export async function runMutation(req: MutateRequest): Promise<MutationResponse>
     updated_timeline: delta.updated_timeline,
     updated_sector_impacts: delta.updated_sector_impacts,
     mutation_summary: delta.mutation_summary,
+    simulation: branch,
   };
 
-  // ─── Persist ─────────────────────────────────────────────────────────────
-  try {
-    const supabase = getSupabaseAdmin();
-    await supabase.from("mutations").insert({
-      id: mutation_id,
-      simulation_id,
-      mutation_prompt,
-      mutation_json: result,
-    });
-  } catch (dbErr) {
-    logger.warn("[MutationService] Failed to persist mutation", {
-      error: String(dbErr),
-      mutation_id,
-    });
-  }
+  await saveSimulation(branch);
 
   logger.info("[MutationService] Mutation complete", {
     mutation_id,

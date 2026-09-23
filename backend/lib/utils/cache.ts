@@ -9,6 +9,7 @@
  */
 
 import { createHash } from "crypto";
+import type { SimulationResponse } from '../schemas/simulation.schema';
 
 interface CacheEntry<T> {
   value: T;
@@ -22,7 +23,7 @@ class SimpleCache<T> {
 
   /** Returns a deterministic key for a given prompt string. */
   key(prompt: string): string {
-    return createHash("sha256").update(prompt.trim().toLowerCase()).digest("hex");
+    return createHash("sha256").update(prompt.trim()).digest("hex");
   }
 
   get(key: string): T | null {
@@ -36,6 +37,8 @@ class SimpleCache<T> {
   }
 
   set(key: string, value: T, ttl = TTL_MS): void {
+    this.prune();
+    if(this.store.size>=100 && !this.store.has(key)) this.store.delete(this.store.keys().next().value!);
     this.store.set(key, { value, expiresAt: Date.now() + ttl });
   }
 
@@ -54,4 +57,4 @@ class SimpleCache<T> {
 
 // Singleton cache — shared across all requests in the same process.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const simulationCache = new SimpleCache<any>();
+export const simulationCache = new SimpleCache<SimulationResponse>();

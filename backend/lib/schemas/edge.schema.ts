@@ -3,6 +3,7 @@ import { z } from "zod";
 /** Normalise any natural-language relationship word the LLM might produce. */
 function normaliseRelationship(val: string): string {
   const v = val.toLowerCase().trim();
+  if (v === 'block' || v === 'blocks') return 'block';
   if (["increase", "increases", "boost", "boosts", "accelerate", "accelerates", "grow", "grows", "expand", "expands", "support", "supports", "strengthen", "strengthens", "enable", "enables"].includes(v)) return "increase";
   if (["decrease", "decreases", "reduce", "reduces", "decline", "declines", "lower", "lowers", "shrink", "shrinks", "block", "blocks", "restrict", "restricts", "limit", "limits"].includes(v)) return "decrease";
   if (["transform", "transforms", "shift", "shifts", "change", "changes", "alter", "alters", "reshape", "reshapes"].includes(v)) return "transform";

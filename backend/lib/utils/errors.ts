@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
 
-/* ─── Error Types ──────────────────────────────────────────────────────────── */
+/* â”€â”€â”€ Error Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 export type AppErrorType =
+  | "configuration_error"
+  | "storage_error"
+  | "unauthorized"
+  | "forbidden"
   | "validation_error"       // Zod / schema failure
   | "ai_generation_error"    // Groq call failed completely
   | "ai_parse_error"         // Could not parse JSON from LLM
@@ -23,7 +27,7 @@ export class AppError extends Error {
   }
 }
 
-/* ─── Response Helpers ─────────────────────────────────────────────────────── */
+/* â”€â”€â”€ Response Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 /** Wraps a successful payload in the standard envelope. */
 export function successResponse<T>(data: T, status = 200) {
@@ -61,16 +65,16 @@ export function handleApiError(err: unknown) {
     if (err.message.toLowerCase().includes("rate limit")) {
       return errorResponse("rate_limit_error", "AI rate limit reached. Please try again shortly.", 429);
     }
-    return errorResponse("internal_error", err.message, 500);
+    return errorResponse("internal_error", "The request could not be completed. Check the server configuration and logs.", 500);
   }
 
   return errorResponse("internal_error", "An unexpected error occurred.", 500);
 }
 
-/* ─── CORS Headers ─────────────────────────────────────────────────────────── */
+/* â”€â”€â”€ CORS Headers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 export function corsHeaders(): HeadersInit {
-  const origin = process.env.CORS_ORIGIN ?? "*";
+  const origin = process.env.CORS_ORIGIN ?? "http://localhost:5175";
   return {
     "Access-Control-Allow-Origin": origin,
     "Access-Control-Allow-Methods": "POST, OPTIONS",

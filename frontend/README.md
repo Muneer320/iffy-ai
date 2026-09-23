@@ -1,36 +1,35 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# The iffy.ai notebook
 
-## Getting Started
+A new paper-and-ink interface for following consequences, comparing assumptions and hearing competing perspectives. This is [iffy.ai's](../README.md) supported frontend; `frontend_v2/` remains historical.
 
-First, run the development server:
+![The running local consequence notebook](../docs/images/graph.png)
 
-```bash
+## Develop locally
+
+Use **Node 22.12+**. Start the [backend](../backend/README.md), then:
+
+```sh
+cd frontend
+npm ci
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open **http://localhost:5175**. `/api/*` rewrites to localhost:8102 by default. Set server-only `IFFY_BACKEND_URL` **before building** for another backend; see `.env.example`. The root Docker quickstart configures both apps.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Select nodes and follow connected threads; switch horizons, inspect timelines/sectors/perspectives, and create a separate branch. Compare it with its original or export its complete JSON. Server notebooks persist through the API; pins use optional browser storage. Mobile puts saved notebooks in the expandable **Your notebooks** menu. The live passkey stays in memory.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Unsupported demo prompts produce a clear error. Cancel waiting aborts the browser request, not provider work already accepted by the server.
 
-## Learn More
+## Check a change
 
-To learn more about Next.js, take a look at the following resources:
+```sh
+npm run lint
+npm run build
+npm run typecheck
+npx playwright install chromium
+npx playwright test
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Browser checks require the root Docker demo. `IFFY_CHROME_PATH` selects an existing local Chrome executable; `IFFY_UI_URL` selects another local UI. Screenshots use authored fixtures only.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+[Operations and limits](../docs/OPERATIONS.md) · [Team/history](../docs/PROVENANCE.md) · [MIT license](../LICENSE)

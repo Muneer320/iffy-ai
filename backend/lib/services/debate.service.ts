@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { v4 as uuidv4 } from "uuid";
+import { randomUUID as uuidv4 } from "node:crypto";
 import { generateFromAI } from "../ai/pipeline/generate";
 import { validateOutput } from "../ai/pipeline/validate";
 import { repairOutput } from "../ai/pipeline/repair";
@@ -7,17 +7,19 @@ import {
   DEBATE_SYSTEM_PROMPT,
   buildDebateUserPrompt,
 } from "../ai/prompts/debate.prompt";
-import { DebateSchema, DebateMessage, DebateMessageSchema, Participant } from "../schemas/debate.schema";
-import { getSupabaseAdmin } from "../supabase/client";
+import { DebateSchema, DebateMessage, DebateMessageSchema, Participant, ParticipantSchema } from "../schemas/debate.schema";
+import { saveDebate, loadSimulation } from '../storage';
+import { runtimeMode } from '../runtime';
+import { demoDebate } from '../demo/examples';
 import { logger } from "../utils/logger";
 import { AppError } from "../utils/errors";
 
 const ContinuationResponseSchema = z.object({
-  messages: z.array(DebateMessageSchema).min(1),
+  messages: z.array(DebateMessageSchema).min(1).max(12),
 });
 
 const ParticipantsResponseSchema = z.object({
-  participants: z.array(z.any()).min(1), // Using any here to bypass strict validation in the initial step if needed, or import ParticipantSchema. Wait, ParticipantSchema is in debate.schema
+  participants: z.array(ParticipantSchema).min(3).max(8),
 });
 
 export interface DebateRequest {
@@ -42,12 +44,20 @@ export interface DebateResponse {
  * Maintains conversational memory by including previous messages in context.
  */
 export async function runDebate(req: DebateRequest): Promise<DebateResponse> {
+  const saved=await loadSimulation(req.simulation_id);
+  if(!saved) throw new AppError('not_found','The notebook was not found.',404);
+  if(runtimeMode() === 'demo') {
+    if(req.continuation_prompt || req.existing_messages.length) throw new AppError('bad_request','The demo contains one authored opening debate. Follow-ups require live mode.',422);
+    const result=demoDebate(saved);
+    await saveDebate(result.debate_id,req.simulation_id,result);
+    return result;
+  }
   const {
     simulation_id,
     participants,
     existing_messages,
     continuation_prompt,
-    scenario = "this scenario",
+    scenario = saved.metadata.scenario,
   } = req;
 
   const mode = req.mode ?? (existing_messages.length === 0 && participants.length === 0 ? "full" : "messages");
@@ -94,7 +104,7 @@ export async function runDebate(req: DebateRequest): Promise<DebateResponse> {
       messages: [],
     };
   } else if (mode === "full") {
-    // Full debate generation — validate against full DebateSchema
+    // Full debate generation â€” validate against full DebateSchema
     let debate;
     try {
       debate = validateOutput(DebateSchema, rawData, "debate", 1);
@@ -118,7 +128,7 @@ export async function runDebate(req: DebateRequest): Promise<DebateResponse> {
       messages: debate.messages,
     };
   } else {
-    // Continuation or messages-only — only validate the new messages
+    // Continuation or messages-only â€” only validate the new messages
     let continuation;
     try {
       continuation = validateOutput(ContinuationResponseSchema, rawData, "debate:continue", 1);
@@ -143,20 +153,8 @@ export async function runDebate(req: DebateRequest): Promise<DebateResponse> {
     };
   }
 
-  // ─── Persist ─────────────────────────────────────────────────────────────
-  try {
-    const supabase = getSupabaseAdmin();
-    await supabase.from("debates").insert({
-      id: result.debate_id,
-      simulation_id,
-      messages: result.messages,
-    });
-  } catch (dbErr) {
-    logger.warn("[DebateService] Failed to persist debate", {
-      error: String(dbErr),
-      debate_id: result.debate_id,
-    });
-  }
-
+  const ids=new Set(result.participants.map(p=>p.id));
+  if(result.messages.some(m=>!ids.has(m.speaker_id))) throw new AppError('ai_generation_error','A debate message referenced an unknown speaker.',502);
+  await saveDebate(result.debate_id,simulation_id,result);
   return result;
 }

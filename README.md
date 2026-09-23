@@ -1,127 +1,101 @@
 <div align="center">
 
-# iffy.ai
+# iffy.ai — The consequence notebook
 
-**Ask "what if?" and get a consequence graph instead of a paragraph.**
+**Pull on one idea. See what moves.**
 
-Pick a hypothetical, and iffy.ai simulates how it ripples outward: which sectors move, what trades off against what, how it unfolds over time, and what people on different sides would argue about it.
+Explore “what if?” questions through connected effects, time horizons and competing perspectives.<br/>
+Change an assumption, follow a different path, and keep the original beside it.
 
-<img src="https://img.shields.io/badge/ProdX_%40_NAVERA_'26-Top_7_of_350%2B_teams-FFD700?style=for-the-badge&logoColor=black" alt="Top 7 of 350+ teams at ProdX @ NAVERA '26" />
-
-<br><br>
-
-![Next.js](https://img.shields.io/badge/Next.js_15-000000?style=flat-square&logo=next.js&logoColor=white)
-![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)
-![Groq](https://img.shields.io/badge/Groq-llama--3.3--70b-F55036?style=flat-square)
-![Zod](https://img.shields.io/badge/Zod-3E67B1?style=flat-square&logo=zod&logoColor=white)
-![Supabase](https://img.shields.io/badge/Supabase-3FCF8E?style=flat-square&logo=supabase&logoColor=white)
-![React Flow](https://img.shields.io/badge/React_Flow-FF0072?style=flat-square)
+[Try the notebook](#try-the-notebook) · [The workflow](#from-question-to-consequence) · [Development & live mode](docs/OPERATIONS.md) · [Team & history](docs/PROVENANCE.md)
 
 </div>
 
----
+![The working iffy.ai notebook: a paper-and-ink workspace with questions about work, cities and education](docs/images/home.png)
 
-## The problem with asking an LLM "what if"
+A paragraph can make a hypothetical sound more settled than it is. iffy.ai turns it into something you can inspect: select a consequence, trace its connections, look at who benefits, and ask which assumptions made that outcome possible.
 
-You get prose. Prose is hard to explore, impossible to branch, and easy to nod along to without noticing the model contradicted itself two paragraphs up.
+> [!NOTE]
+> **The default is an authored demo you can run without credentials.** Three examples and their alternatives illustrate the workflow, with no model calls. Optional private live mode uses Groq and Supabase for new questions and requires your own configuration. Live provider usage and the old external deployment remain unverified. Neither mode is a calibrated forecasting tool.
 
-iffy.ai forces the model to answer in a **typed structure** instead: nodes, edges, sectors, timelines, debate turns. That makes the answer navigable, branchable, and checkable. And because it is checkable, the system can tell when the model got it wrong.
+## From question to consequence
 
----
+| Look through… | Find… |
+| --- | --- |
+| **The consequence graph** | Selectable nodes, directed connections and explanations. Switch time horizons to see which illustrative effects change. |
+| **The timeline** | Immediate adjustments, short-term adaptation and longer-term questions. |
+| **Sector views** | Opportunities, trade-offs and a closer look at the systems involved. |
+| **Perspectives** | Fictional voices with different stakes, rather than invented interviews or expert consensus. |
+| **An alternative path** | A separately saved branch and a comparison against the original. The first notebook stays intact. |
 
-## The interesting part: the model does not get the last word
+![The real consequence graph with Coverage gaps selected and its connected effects explained](docs/images/graph.png)
 
-Every generation runs through validate-and-repair. If output fails its schema, the failures are handed back to the model as text and it tries again. Only a second failure surfaces an error.
+The new notebook interface pairs a scrollable graph with a persistent question library. Notebooks survive a container recreation; browser pins help you find them again. JSON export keeps the graph, source mode and assumptions together.
+
+## Try the notebook
+
+Requires **Docker with Compose**; start Docker Desktop on Windows. Initial image/dependency downloads require internet. No provider credentials or environment file are needed.
+
+```sh
+git clone https://github.com/Muneer320/iffy-ai.git
+cd iffy-ai
+docker compose -p iffy-demo up -d --build --wait
+```
+
+Open **[localhost:5175](http://localhost:5175)**. API health: [localhost:8102/api/health](http://localhost:8102/api/health).
+
+1. Open **“What if a four-day workweek became the standard?”**
+2. Select **Coverage gaps**, switch between **Immediate** and **Short term**, and read the connection explanations.
+3. Inspect **Timeline**, **Sectors** and **Perspectives**.
+4. Choose **Follow another path**, select the public-service staffing alternative, then **Create alternative**. **Compare changes** shows what moved; **Open original** preserves the starting point.
+5. Pin the notebook or **Export JSON**. Reload its URL to return to the saved graph.
+
+The city-centre and tuition examples use different assumptions. The demo accepts those exact library prompts and one authored branch per original. Arbitrary questions, nested branches and debate follow-ups require live mode. Demo scores and personas are illustrative.
+
+![An actual branch comparison showing the effect of changing the staffing assumption](docs/images/comparison.png)
+
+Stop with `docker compose -p iffy-demo stop`; the named notebook volume remains. Removing that volume deletes the demo notebooks. The [operations guide](docs/OPERATIONS.md#docker-demo) covers backup and storage limits.
+
+<details>
+<summary><strong>Perspectives and mobile views</strong></summary>
+
+Captured from the running app using authored fixtures. Mobile puts saved notebooks in an expandable library; the graph scrolls within its own area.
+
+![The working app's three fictional perspectives on the four-day workweek](docs/images/perspectives.png)
+
+<img src="docs/images/mobile.png" width="390" alt="The actual 390-pixel mobile notebook with saved-question navigation, graph and consequence details" />
+
+</details>
+
+<details>
+<summary><strong>Architecture and optional private live mode</strong></summary>
 
 ```mermaid
 flowchart LR
-    A[Request] --> B[Service]
-    B --> C[Prompt]
-    C --> D["Groq<br/>llama-3.3-70b"]
-    D --> E[JSON parse]
-    E --> F{"Zod<br/>validate"}
-    F -->|pass| G[(Supabase)]
-    G --> H[Response]
-    F -->|fail| I["Repair:<br/>send the issue list back"]
-    I --> D
-    F -->|fail twice| J[502]
-
-    style F fill:#3E67B1,color:#fff
-    style I fill:#F55036,color:#fff
-    style J fill:#6e2020,color:#fff
+    UI["Next.js notebook"] --> API["Same-origin API rewrite"]
+    API --> Routes["Access gate + bounded schemas"]
+    Routes --> Mode{"Runtime mode"}
+    Mode -->|demo| Examples["Authored examples + branches"]
+    Examples --> File["Local notebook volume"]
+    Mode -->|live| Budget["Supabase atomic generation budget"]
+    Budget --> Groq["Groq generation"]
+    Groq --> Validate["Zod + graph integrity"]
+    Validate -->|bounded repair| Groq
+    Validate --> DB["Private Supabase records"]
 ```
 
-Validation is not just "is this JSON". The schemas enforce floors, so the model cannot pass by answering thinly:
+The retained backend uses generation → validation → bounded repair. Simulations require at least **6 nodes, 5 edges, 4 sectors and 3 personas**, unique node/edge IDs and valid edge references. These checks establish coherent structure, not the truth of a causal claim.
 
-| Rule | Floor |
-|---|---|
-| Consequence nodes | at least **6** |
-| Causal edges between them | at least **5** |
-| Sectors affected | at least **4** |
-| Debate participants | at least **3** |
+Live mode requires a server-side passkey and both SQL migrations. Each provider attempt, including retries/repairs, consumes a shared **6/minute and 50/day** workspace budget; unavailable quota storage fails closed. The UI forwards a passkey held only in memory. No secret is injected to unlock anonymous model usage.
 
-Zod issues are flattened to `[path.to.field] message` before going back to the model, so the repair prompt names exactly what was wrong rather than asking it to try harder.
+Migration 002 removes the original anonymous database-read policies. Existing deployments gain no protection until upgraded. See [live setup, privacy and verification limits](docs/OPERATIONS.md#optional-private-live-mode).
 
----
+</details>
 
-## What you can do with a scenario
+## Develop or contribute
 
-| Endpoint | What it does |
-|---|---|
-| `POST /api/simulate` | Turn a hypothetical into a full consequence graph, sector breakdown and timeline |
-| `POST /api/mutate` | Branch an existing simulation under a new condition, keeping the original intact |
-| `POST /api/debate` | Stage a multi-participant argument about the scenario, and continue it with follow-ups |
-| `POST /api/sector` | Drill into one sector for a deeper read than the overview gives |
+Supported apps: `frontend/` and `backend/`, on Next.js 16 / React 19. Native development requires **Node 22.12+**; Docker and CI use Node 24. `frontend_v2/` is an unsupported sprint experiment.
 
-`community`, `saved` and `marketplace` routes back sharing and revisiting scenarios.
+The [operations guide](docs/OPERATIONS.md) gives the native setup and exact build, typecheck, regression, PostgreSQL and browser commands. CI checks both apps, the quota migration and the real Docker/browser demo. Preserve the demo/live distinction and include a reproducible check with behavior changes. [Issues and pull requests](https://github.com/Muneer320/iffy-ai/issues) are welcome.
 
----
-
-## Layout
-
-```
-backend/                 Next.js 15 App Router, API only
-  app/api/               route handlers
-  lib/
-    ai/
-      groq.ts            client, model and retry budget
-      pipeline/          generate -> validate -> repair
-      prompts/           one system + user prompt per endpoint
-    schemas/             Zod: node, edge, timeline, sector, simulation, debate
-    services/            business logic, one per endpoint
-    supabase/            client and SQL migration
-    utils/               logger, typed errors, cache
-frontend/                the UI that shipped: React Flow graph, Recharts, Zustand
-frontend_v2/             an alternate shadcn/Radix build explored during the sprint
-```
-
-`backend/README.md` has the request and response shapes for each endpoint.
-
----
-
-## Running it
-
-```bash
-cd backend
-npm install
-cp .env.local.example .env.local     # GROQ_API_KEY + Supabase keys
-# run lib/supabase/migrations/001_initial.sql in the Supabase SQL editor
-npm run dev                          # http://localhost:3000
-```
-
-Model and retry budget are environment-driven, so you can swap either without touching code:
-
-```bash
-GROQ_MODEL=llama-3.3-70b-versatile   # default
-AI_MAX_RETRIES=2                     # default
-```
-
----
-
-## Provenance
-
-Built for **ProdX @ NAVERA '26**, the Scaler School of Business AI hackathon, and placed **Top 7 out of 350+ teams**.
-
-Built by [Muneer Alam](https://github.com/Muneer320), [Amrit Kang](https://github.com/amritkang165) and Akshaj Garlapati. Mentored by Anshuman Singh.
-
-Archived. It is not maintained, and the repo is kept as a record of what was built during the sprint.
+Created for **ProdX @ NAVERA '26** by **[Muneer Alam](https://github.com/Muneer320)**, creator and team lead, with **[Amrit Kang](https://github.com/amritkang165)** and **Akshaj Garlapati**, mentored by **Anshuman Singh**. [History and contribution boundaries](docs/PROVENANCE.md) preserve the original team record. [MIT licensed](LICENSE).

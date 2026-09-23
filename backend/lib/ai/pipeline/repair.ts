@@ -54,6 +54,7 @@ Do NOT include any markdown, code fences, or explanations — only the raw JSON.
 
       return validateOutput(schema, raw, endpoint, attempt);
     } catch (err) {
+      if(err instanceof AppError && (err.type === 'rate_limit_error' || err.type === 'configuration_error')) throw err;
       if (attempt === AI_MAX_RETRIES) {
         logger.error(`[Repair] All repair attempts exhausted for ${endpoint}`, {
           error: String(err),
@@ -67,6 +68,5 @@ Do NOT include any markdown, code fences, or explanations — only the raw JSON.
     }
   }
 
-  // Should be unreachable
-  throw new AppError("internal_error", "Unexpected repair loop exit", 500);
+  throw new AppError("ai_generation_error", "Model output failed validation and schema repairs are disabled.", 502);
 }

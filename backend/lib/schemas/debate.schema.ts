@@ -15,7 +15,7 @@ export const ParticipantSchema = z.object({
 /** A single message spoken by a participant. */
 export const DebateMessageSchema = z.object({
   speaker_id: z.string().min(1),
-  message: z.string().min(1),
+  message: z.string().min(1).max(4000),
   emotion: z.enum([
     "excited",
     "concerned",
@@ -31,8 +31,12 @@ export const DebateMessageSchema = z.object({
 
 /** The full debate payload (participants + opening messages). */
 export const DebateSchema = z.object({
-  participants: z.array(ParticipantSchema).min(3),
-  messages: z.array(DebateMessageSchema).min(3),
+  participants: z.array(ParticipantSchema).min(3).max(8),
+  messages: z.array(DebateMessageSchema).min(3).max(36),
+}).superRefine((debate, ctx) => {
+  const ids=new Set(debate.participants.map(p=>p.id));
+  if(ids.size!==debate.participants.length) ctx.addIssue({code:'custom',message:'Participant IDs must be unique.'});
+  if(debate.messages.some(m=>!ids.has(m.speaker_id))) ctx.addIssue({code:'custom',path:['messages'],message:'Each message must reference a participant.'});
 });
 
 export type Participant = z.infer<typeof ParticipantSchema>;

@@ -18,17 +18,30 @@ export const SimulationResponseSchema = z.object({
   title: z.string().min(1),
   summary: z.string().min(1),
   systems: z.array(z.string()).min(1),
-  nodes: z.array(NodeSchema).min(6, "Minimum 6 nodes required"),
-  edges: z.array(EdgeSchema).min(5, "Minimum 5 edges required"),
+  nodes: z.array(NodeSchema).min(6, "Minimum 6 nodes required").max(80),
+  edges: z.array(EdgeSchema).min(5, "Minimum 5 edges required").max(160),
   timeline: TimelineSchema,
-  sector_impacts: z.array(SectorImpactSchema).default([]),
-  debate_participants: z.array(ParticipantSchema).default([]),
+  sector_impacts: z.array(SectorImpactSchema).min(4).max(12),
+  debate_participants: z.array(ParticipantSchema).min(3).max(8),
   metadata: z.object({
     scenario: z.string(),
     duration_focus: z.string(),
     generated_at: z.string(),
     model: z.string(),
+    mode: z.enum(['demo', 'live']).default('live'),
+    example_id: z.string().optional(),
+    assumption: z.string().optional(),
+    parent_id: z.string().uuid().optional(),
+    mutation_prompt: z.string().optional(),
   }),
+}).superRefine((simulation, ctx) => {
+  const ids = new Set(simulation.nodes.map(node => node.id));
+  if (ids.size !== simulation.nodes.length) ctx.addIssue({code:'custom',path:['nodes'],message:'Node IDs must be unique.'});
+  if(new Set(simulation.edges.map(edge=>edge.id)).size!==simulation.edges.length) ctx.addIssue({code:'custom',path:['edges'],message:'Edge IDs must be unique.'});
+  simulation.edges.forEach((edge, index) => {
+    if (!ids.has(edge.source) || !ids.has(edge.target)) ctx.addIssue({code:'custom',path:['edges',index],message:'Edges must reference existing nodes.'});
+  });
+  if(new Set(simulation.debate_participants.map(p=>p.id)).size!==simulation.debate_participants.length) ctx.addIssue({code:'custom',path:['debate_participants'],message:'Participant IDs must be unique.'});
 });
 
 export type SimulationResponse = z.infer<typeof SimulationResponseSchema>;

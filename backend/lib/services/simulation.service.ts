@@ -1,10 +1,12 @@
-import { v4 as uuidv4 } from "uuid";
+import { randomUUID as uuidv4 } from "node:crypto";
 import { generateFromAI } from "../ai/pipeline/generate";
 import { validateOutput } from "../ai/pipeline/validate";
 import { repairOutput } from "../ai/pipeline/repair";
 import { SIMULATE_SYSTEM_PROMPT, buildSimulateUserPrompt } from "../ai/prompts/simulate.prompt";
 import { SimulationResponseSchema, SimulationResponse } from "../schemas/simulation.schema";
-import { getSupabaseAdmin } from "../supabase/client";
+import { saveSimulation, loadSimulation } from '../storage';
+import { runtimeMode } from '../runtime';
+import { createDemo } from '../demo/examples';
 import { simulationCache } from "../utils/cache";
 import { logger } from "../utils/logger";
 import { GROQ_MODEL } from "../ai/groq";
@@ -19,30 +21,35 @@ export interface SimulateRequest {
 /**
  * Simulation Service
  *
- * Orchestrates the full generate → validate → repair → persist pipeline
+ * Orchestrates the full generate â†’ validate â†’ repair â†’ persist pipeline
  * for POST /api/simulate.
  */
 export async function runSimulation(req: SimulateRequest): Promise<SimulationResponse> {
   const { scenario, duration_focus = "all" } = req;
+  if(runtimeMode() === 'demo') {
+    const result=createDemo(scenario,duration_focus);
+    await saveSimulation(result);
+    return result;
+  }
 
   if (!scenario || scenario.trim().length < 5) {
     throw new AppError("bad_request", "Scenario must be at least 5 characters.", 400);
   }
 
-  // ─── Cache Check ────────────────────────────────────────────────────────
+  // â”€â”€â”€ Cache Check â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const cacheKey = simulationCache.key(`${scenario}::${duration_focus}`);
   const cached = simulationCache.get(cacheKey);
   if (cached) {
-    logger.info("[SimulationService] Cache hit", { scenario });
+    logger.info("[SimulationService] Cache hit");
     return cached as SimulationResponse;
   }
 
-  // ─── Build Prompts ───────────────────────────────────────────────────────
+  // â”€â”€â”€ Build Prompts â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const systemPrompt = SIMULATE_SYSTEM_PROMPT;
   const userPrompt = buildSimulateUserPrompt(scenario, duration_focus);
   const simulation_id = uuidv4();
 
-  // ─── Generate ────────────────────────────────────────────────────────────
+  // â”€â”€â”€ Generate â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const rawData = await generateFromAI({
     systemPrompt,
     userPrompt,
@@ -58,10 +65,11 @@ export async function runSimulation(req: SimulateRequest): Promise<SimulationRes
       duration_focus,
       generated_at: new Date().toISOString(),
       model: GROQ_MODEL,
+      mode: "live",
     },
   };
 
-  // ─── Validate → Repair if needed ─────────────────────────────────────────
+  // â”€â”€â”€ Validate â†’ Repair if needed â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   let simulation: SimulationResponse;
   try {
     simulation = validateOutput(SimulationResponseSchema, dataWithMeta, "simulate", 1);
@@ -82,30 +90,16 @@ export async function runSimulation(req: SimulateRequest): Promise<SimulationRes
         duration_focus,
         generated_at: new Date().toISOString(),
         model: GROQ_MODEL,
+      mode: "live",
       };
     } else {
       throw err;
     }
   }
 
-  // ─── Persist to Supabase ─────────────────────────────────────────────────
-  try {
-    const supabase = getSupabaseAdmin();
-    await supabase.from("simulations").insert({
-      id: simulation_id,
-      title: simulation.title,
-      scenario,
-      simulation_json: simulation,
-    });
-  } catch (dbErr) {
-    // Non-fatal: log but don't fail the request
-    logger.warn("[SimulationService] Failed to persist simulation to Supabase", {
-      error: String(dbErr),
-      simulation_id,
-    });
-  }
+  await saveSimulation(simulation);
 
-  // ─── Cache Result ────────────────────────────────────────────────────────
+  // â”€â”€â”€ Cache Result â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   simulationCache.set(cacheKey, simulation);
 
   return simulation;
@@ -115,13 +109,5 @@ export async function runSimulation(req: SimulateRequest): Promise<SimulationRes
  * Retrieves a previously saved simulation by ID.
  */
 export async function getSimulationById(id: string): Promise<SimulationResponse | null> {
-  const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("simulations")
-    .select("simulation_json")
-    .eq("id", id)
-    .single();
-
-  if (error || !data) return null;
-  return data.simulation_json as SimulationResponse;
+  return loadSimulation(id);
 }

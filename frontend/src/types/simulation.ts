@@ -85,6 +85,11 @@ export interface SimulationMetadata {
   duration_focus: string;
   generated_at: string;
   model: string;
+  mode: "demo" | "live";
+  example_id?: string;
+  assumption?: string;
+  parent_id?: string;
+  mutation_prompt?: string;
 }
 
 export interface SimulationResponse {
@@ -103,13 +108,12 @@ export interface SimulationResponse {
 export interface MutationResponse {
   mutation_id: string;
   divergence_nodes: string[];
-  updated_title: string;
-  updated_summary: string;
   updated_nodes: SimulationNode[];
   updated_edges: SimulationEdge[];
   updated_timeline: Timeline;
   updated_sector_impacts: SectorImpact[];
   mutation_summary: string;
+  simulation: SimulationResponse;
 }
 
 export interface DebateResponse {

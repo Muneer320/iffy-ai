@@ -1,23 +1,5 @@
-import { successResponse, handleApiError, handleOptions, corsHeaders } from "../../../../lib/utils/errors";
-import { trending, marketplaceItems, recentDiscussions, featuredCreators } from "../../../../lib/mock-data";
-
-export async function GET() {
-  try {
-    const response = successResponse({
-      trending,
-      marketplaceItems,
-      recentDiscussions,
-      featuredCreators
-    });
-    Object.entries(corsHeaders()).forEach(([k, v]) => response.headers.set(k, v));
-    return response;
-  } catch (err) {
-    const response = handleApiError(err);
-    Object.entries(corsHeaders()).forEach(([k, v]) => response.headers.set(k, v));
-    return response;
-  }
-}
-
-export async function OPTIONS() {
-  return handleOptions();
-}
+import { getRoute, options } from '../../../../lib/api';
+import { AppError } from '../../../../lib/utils/errors';
+export const GET=getRoute(async()=>{throw new AppError('not_found','Community and marketplace are historical prototypes, not active features.',501);});
+export const POST=GET;
+export const OPTIONS=options;

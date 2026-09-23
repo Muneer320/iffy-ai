@@ -6,6 +6,7 @@ import { SECTOR_SYSTEM_PROMPT, buildSectorUserPrompt } from "../ai/prompts/secto
 import { SectorImpactSchema } from "../schemas/sector.schema";
 import { getSimulationById } from "./simulation.service";
 import { AppError } from "../utils/errors";
+import { runtimeMode } from "../runtime";
 
 /** Extended sector schema with sub_sectors and key_players */
 const DeepSectorSchema = SectorImpactSchema.extend({
@@ -43,6 +44,13 @@ export interface SectorRequest {
  */
 export async function runSectorAnalysis(req: SectorRequest): Promise<DeepSectorAnalysis> {
   const { simulation_id, sector } = req;
+  const saved=await getSimulationById(simulation_id);
+  if(!saved) throw new AppError('not_found','The notebook was not found.',404);
+  if(runtimeMode() === 'demo') {
+    const analysis=saved.sector_impacts.find(s=>s.sector===sector);
+    if(!analysis) throw new AppError('not_found','This sector is not part of the example.',404);
+    return {...analysis,sub_sectors:[{name:'Implementation',impact:'neutral' as const,explanation:'The authored example depends on resources and equitable access.'}],key_players:[{type:'mixed' as const,group:'People affected by the policy',reason:'Benefits and costs are not shared equally.'}]};
+  }
 
   if (!sector || sector.trim().length === 0) {
     throw new AppError("bad_request", "Sector name is required.", 400);
